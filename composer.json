@@ -1,0 +1,12 @@
+{
+    "name": "tzmfreedom/phphp",
+    "authors": [
+        {
+            "name": "tzmfreedom",
+            "email": "makoto_tajitsu@hotmail.co.jp"
+        }
+    ],
+    "require": {
+        "nikic/php-parser": "^4.3"
+    }
+}
