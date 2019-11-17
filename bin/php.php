@@ -5,7 +5,6 @@ require __DIR__ . '/../vendor/autoload.php';
 use PHPHP\PHPInterpreter;
 use PhpParser\Error;
 use PhpParser\ParserFactory;
-use PhpParser\NodeDumper;
 
 function main(string $code)
 {
@@ -27,4 +26,3 @@ function main(string $code)
 
 $code = file_get_contents("php://stdin");
 main($code);
-

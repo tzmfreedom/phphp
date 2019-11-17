@@ -70,7 +70,7 @@ class PHPInterpreter
                     $this->currentEnv = $prevEnv;
                     return $ret;
                 }
-                throw new Exception("no function exists");
+                throw new \Exception("no function exists");
             case \PhpParser\Node\Expr\Assign::class:
                 $expr = $this->evaluate($node->expr);
                 $this->currentEnv->set($node->var->name, $expr);
@@ -119,7 +119,7 @@ class PHPInterpreter
                     $obj = new Instance($this->classMap[$name]);
                     return $obj;
                 }
-                throw new Exception("no class exists");
+                throw new \Exception("no class exists");
             case Expr\MethodCall::class:
                 $receiver = $this->evaluate($node->var);
                 $isReceiverThis= $node->var instanceof \PhpParser\Node\Expr\Variable && $node->var->name === 'this';
@@ -130,7 +130,7 @@ class PHPInterpreter
                     $args[$i] = $this->evaluate($arg);
                 }
                 if (count($args) < count($method->getParams())) {
-                    throw new Exception('few parameter');
+                    throw new \Exception('few parameter');
                 }
                 $prevEnv = $this->currentEnv;
                 $this->currentEnv = new VariableEnvironment(null);
