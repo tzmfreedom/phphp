@@ -1,5 +1,9 @@
 {
     "name": "tzmfreedom/phphp",
+    "type": "library",
+    "description": "PHP written by PHP",
+    "homepage": "https://github.com/tzmfreedom/phphp",
+    "license": "MIT",
     "authors": [
         {
             "name": "tzmfreedom",
@@ -13,6 +17,7 @@
         }
     },
     "require": {
+        "php": ">=7.2",
         "nikic/php-parser": "^4.3"
     }
 }
