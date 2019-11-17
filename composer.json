@@ -6,6 +6,7 @@
             "email": "makoto_tajitsu@hotmail.co.jp"
         }
     ],
+    "bin": ["bin/phphp"],
     "autoload": {
         "psr-4": {
             "PHPHP\\": "src/"
