@@ -11,7 +11,7 @@ $ composer global require tzmfreedom/phphp
 ## Usage
 
 ```bash
-$ phphp < /path/to/file
+$ phphp /path/to/file
 ```
 
 ## With Apache
@@ -20,9 +20,8 @@ $ phphp < /path/to/file
 
 2. Put CGI Bridge code to your PATH
 
-
 ```bash
-$ echo 'sed 1d $1 | php /path/to/phphp' > /usr/local/bin/phphp
+$ echo "$(which php) $(which phphp) \$1" > /usr/local/bin/phphp
 $ chmod +x /usr/local/bin/phphp
 ```
 
@@ -42,3 +41,7 @@ function hoge($i) { echo $i . "<br/>"; }
 hoge("World");
 ?>
 ```
+
+## LICENSE
+
+MIT

@@ -2,9 +2,14 @@
 
 namespace PHPHP;
 
+use PhpParser\Node\Scalar\MagicConst\Dir;
+use PhpParser\Node\Scalar\MagicConst\File;
+use PhpParser\Node\Scalar\String_;
 use PhpParser\Node\Stmt;
 use PhpParser\Node\Stmt\Echo_;
 use PhpParser\Node\Expr;
+use PhpParser\NodeDumper;
+use PhpParser\Parser;
 
 class PHPInterpreter
 {
@@ -28,7 +33,22 @@ class PHPInterpreter
      */
     private $classMap;
 
-    function __construct()
+    /**
+     * @var Parser
+     */
+    private $parser;
+
+    /**
+     * @var string
+     */
+    private $currentFilePath;
+
+    /**
+     * @var bool
+     */
+    private $debug;
+
+    public function __construct(Parser $parser)
     {
         $this->constMap = [
             'PHP_EOL' => new \PhpParser\Node\Scalar\String_(PHP_EOL),
@@ -36,9 +56,45 @@ class PHPInterpreter
             'false' => new BoolObject(false),
         ];
         $this->currentEnv = new VariableEnvironment(null);
+        $this->parser = $parser;
     }
 
-    function evaluate($node)
+    /**
+     * @param bool $debug
+     */
+    public function setDebug(bool $debug)
+    {
+        $this->debug = $debug;
+    }
+
+    /**
+     * @param string $code
+     * @param string $filePath
+     * @throws \Exception
+     */
+    public function run(string $code, string $filePath)
+    {
+        $prevPath = $this->currentFilePath;
+        $this->currentFilePath = realpath($filePath);
+        $ast = $this->parser->parse($code);
+
+        if ($this->debug) {
+            $dumper = new NodeDumper;
+            echo $dumper->dump($ast) . "\n";
+        }
+
+        foreach ($ast as $stmt) {
+            $this->evaluate($stmt);
+        }
+        $this->currentFilePath = $prevPath;
+    }
+
+    /**
+     * @param $node
+     * @return mixed|Instance|NullValue|\PhpParser\Node\Scalar\LNumber|String_|void
+     * @throws \Exception
+     */
+    public function evaluate($node)
     {
         switch (get_class($node)) {
             case Stmt\Expression::class:
@@ -147,25 +203,108 @@ class PHPInterpreter
             case Stmt\InlineHTML::class:
                 echo $node->value;
                 return;
+            case Expr\Include_::class:
+                $file = $this->evaluate($node->expr);
+                $code = file_get_contents($file->value);
+                $this->run($code, $file->value);
+                return;
+            // TODO: impl __DIR__ and __FILE__
+            case Dir::class:
+                return new String_(dirname($this->currentFilePath));
+            case File::class:
+                return new String_($this->currentFilePath);
+            case Stmt\If_::class:
+                $cond = $this->evaluate($node->cond);
+                if ($cond->value) {
+                    foreach ($node->stmts as $stmt) {
+                        $ret = $this->evaluate($stmt);
+                        if ($ret instanceof Stmt\Return_) {
+                            return $this->evaluate($ret->expr);
+                        }
+                    }
+                    return;
+                } else if (count($node->elseifs) > 0) {
+                    foreach ($node->elseifs as $elseif) {
+                        $cond = $this->evaluate($elseif->cond);
+                        if ($cond->value) {
+                            foreach ($elseif->stmts as $stmt) {
+                                $ret = $this->evaluate($stmt);
+                                if ($ret instanceof Stmt\Return_) {
+                                    return $this->evaluate($ret->expr);
+                                }
+                            }
+                            return;
+                        }
+                    }
+                }
+                if (!is_null($node->else)) {
+                    foreach ($node->else->stmts as $stmt) {
+                        $ret = $this->evaluate($stmt);
+                        if ($ret instanceof Stmt\Return_) {
+                            return $this->evaluate($ret->expr);
+                        }
+                    }
+                }
+                return;
+            case Expr\Exit_::class:
+                exit;
+            case Stmt\Foreach_::class:
+                $items = $this->evaluate($node->expr);
+                foreach ($node->stmts as $stmt) {
+                    $ret = $this->evaluate($stmt);
+                    $keyVar = $node->keyVar;
+                    $valueVar = $node->valueVar;
+                    if ($ret instanceof Stmt\Return_) {
+                        return $this->evaluate($ret->expr);
+                    }
+                    if ($ret instanceof Stmt\Break_) {
+                        break;
+                    }
+                    if ($ret instanceof Stmt\Continue_) {
+                        break;
+                    }
+                }
+            case Expr\Array_::class:
+                return new ArrayObject($node);
+            case Expr\ArrayDimFetch::class:
+                $var = $this->evaluate($node->var);
+                $dim = $this->evaluate($node->dim);
+                return $var->get($dim->value);
         }
     }
 
-    public function addFunction(string $name, array $params, array $stmts): void
+    /**
+     * @param string $name
+     * @param array $params
+     * @param array $stmts
+     */
+    private function addFunction(string $name, array $params, array $stmts): void
     {
         $this->functions[$name] = new FunctionObject($name, $params, $stmts);
     }
 
-    public function isFunctionExists(string $name): bool
+    /**
+     * @param string $name
+     * @return bool
+     */
+    private function isFunctionExists(string $name): bool
     {
         return array_key_exists($name, $this->functions);
     }
 
-    public function getFunction(string $name): FunctionObject
+    /**
+     * @param string $name
+     * @return FunctionObject
+     */
+    private function getFunction(string $name): FunctionObject
     {
         return $this->functions[$name];
     }
 
-    public function addClass(Stmt\Class_ $node)
+    /**
+     * @param Stmt\Class_ $node
+     */
+    private function addClass(Stmt\Class_ $node)
     {
         $methods = [];
         foreach ($node->getMethods() as $method) {
