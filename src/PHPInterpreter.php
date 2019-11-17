@@ -1,195 +1,12 @@
 <?php
 
-require 'vendor/autoload.php';
+namespace PHPHP;
 
-use PhpParser\Error;
 use PhpParser\Node\Stmt;
 use PhpParser\Node\Stmt\Echo_;
 use PhpParser\Node\Expr;
-use PhpParser\ParserFactory;
-use PhpParser\NodeDumper;
 
-function main(string $code)
-{
-    $parser = (new ParserFactory)->create(ParserFactory::PREFER_PHP7);
-    try {
-        $interpreter = new PhpInterpreter();
-        $ast = $parser->parse($code);
-        foreach ($ast as $stmt) {
-            $interpreter->evaluate($stmt);
-        }
-        $dumper = new NodeDumper;
-        echo $dumper->dump($ast) . "\n";
-    } catch (Error $error) {
-        echo "Parse error: {$error->getMessage()}\n";
-        return;
-    }
-}
-
-class VariableEnvironment
-{
-    /**
-     * @var VariableEnvironment
-     */
-    private $parent;
-
-    /**
-     * @var array
-     */
-    private $store;
-
-    public function __construct(?VariableEnvironment $parent)
-    {
-        $this->parent = $parent;
-        $this->store = [];
-    }
-
-    public function isExists(string $key)
-    {
-        if (array_key_exists($key, $this->store)) {
-            return true;
-        }
-        if (is_null($this->parent)) {
-            return false;
-        }
-        return $this->parent->isExists($key);
-    }
-
-    public function get(string $key)
-    {
-        if (array_key_exists($key, $this->store)) {
-            return $this->store[$key];
-        }
-        if (is_null($this->parent)) {
-            throw new Exception("no exist key"); // TODO: impl
-        }
-        return $this->parent->get($key);
-    }
-
-    public function set(string $key, $value)
-    {
-        if ($this->isExists($key)) {
-            if (array_key_exists($key, $this->store)) {
-                $this->store[$key] = $value;
-                return;
-            }
-            $this->parent->set($key, $value);
-            return;
-        }
-        $this->store[$key] = $value;
-    }
-}
-
-class ClassObject
-{
-    private $name;
-    public $methods;
-
-    public function __construct(string $name, array $methods)
-    {
-        $this->name = $name;
-        $this->methods = $methods;
-    }
-}
-
-class MethodObject
-{
-    public $method;
-
-    public function __construct(Stmt\ClassMethod $method)
-    {
-        $this->method = $method;
-    }
-
-    public function call(PhpInterpreter $interpreter)
-    {
-        foreach ($this->method->stmts as $stmt) {
-            $ret = $interpreter->evaluate($stmt);
-            if ($ret instanceof Stmt\Return_) {
-                return $interpreter->evaluate($ret->expr);
-            }
-        }
-        return new NullValue();
-    }
-
-    /**
-     * @return \PhpParser\Node\Param[]
-     */
-    public function getParams(): array
-    {
-        return $this->method->params;
-    }
-}
-
-class FunctionObject
-{
-    private $name;
-    private $params;
-    private $stmts;
-
-    public function __construct(string $name, array $params, array $stmts)
-    {
-        $this->name = $name;
-        $this->params = $params;
-        $this->stmts = $stmts;
-    }
-
-    public function call(PhpInterpreter $interpreter)
-    {
-        foreach ($this->stmts as $stmt) {
-            $ret = $interpreter->evaluate($stmt);
-            if ($ret instanceof Stmt\Return_) {
-                return $interpreter->evaluate($ret->expr);
-            }
-        }
-        return new NullValue();
-    }
-
-    /**
-     * @param int $index
-     * @return \PhpParser\Node\Param[]
-     */
-    public function getParams(): array
-    {
-        return $this->params;
-    }
-}
-
-class NullValue
-{
-    public $value;
-
-    public function __construct()
-    {
-        $this->value = null;
-    }
-}
-
-class Instance
-{
-    public $class;
-    public $properties;
-
-    public function __construct(ClassObject $class)
-    {
-        $this->class = $class;
-        $this->properties = [];
-    }
-}
-
-class BoolObject
-{
-    /**
-     * @var bool
-     */
-    public $value;
-
-    public function __construct(bool $value)
-    {
-        $this->value = $value;
-    }
-}
-class PhpInterpreter
+class PHPInterpreter
 {
     /**
      * @var array
@@ -290,13 +107,12 @@ class PhpInterpreter
             case \PhpParser\Node\Scalar\String_::class:
             case \PhpParser\Node\Scalar\DNumber::class:
             case \PhpParser\Node\Scalar\LNumber::class:
+            case Stmt\Return_::class:
                 return $node;
             case Stmt\Function_::class:
                 $name = $node->name->toString();
                 $this->addFunction($name, $node->params, $node->stmts);
                 return;
-            case Stmt\Return_::class:
-                return $node;
             case Expr\New_::class:
                 $name = $node->class->toString();
                 if (array_key_exists($name, $this->classMap)) {
@@ -305,9 +121,10 @@ class PhpInterpreter
                 }
                 throw new Exception("no class exists");
             case Expr\MethodCall::class:
-                $receiver = $this->currentEnv->get($node->var->name);
+                $receiver = $this->evaluate($node->var);
+                $isReceiverThis= $node->var instanceof \PhpParser\Node\Expr\Variable && $node->var->name === 'this';
                 /** @var $method MethodObject */
-                $method = $receiver->class->methods[$node->name->toString()];
+                $method = $receiver->class->getMethod($node->name->toString(), $isReceiverThis, $isReceiverThis);
                 $args = [];
                 foreach ($node->args as $i => $arg) {
                     $args[$i] = $this->evaluate($arg);
@@ -320,12 +137,15 @@ class PhpInterpreter
                 $this->currentEnv->set('this', $receiver);
                 foreach ($method->getParams() as $i => $param) {
                     $this->currentEnv->set($param->var->name, $args[$i]);
-                };
+                }
                 $ret = $method->call($this);
                 $this->currentEnv = $prevEnv;
                 return $ret;
             case Stmt\Class_::class:
                 $this->addClass($node);
+                return;
+            case Stmt\InlineHTML::class:
+                echo $node->value;
                 return;
         }
     }
@@ -351,9 +171,11 @@ class PhpInterpreter
         foreach ($node->getMethods() as $method) {
             $methods[$method->name->toString()] = new MethodObject($method);
         }
-        $this->classMap[$node->name->toString()] = new ClassObject($node->name, $methods);
+        if ($node->extends) {
+            $extends = $this->classMap[$node->extends->toString()];
+        } else {
+            $extends = null;
+        }
+        $this->classMap[$node->name->toString()] = new ClassObject($node->name, $methods, $extends, $node->implements);
     }
 }
-$code = file_get_contents("php://stdin");
-main($code);
-

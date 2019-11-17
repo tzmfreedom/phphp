@@ -6,6 +6,11 @@
             "email": "makoto_tajitsu@hotmail.co.jp"
         }
     ],
+    "autoload": {
+        "psr-4": {
+            "PHPHP\\": "src/"
+        }
+    },
     "require": {
         "nikic/php-parser": "^4.3"
     }
