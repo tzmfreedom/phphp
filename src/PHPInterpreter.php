@@ -250,18 +250,22 @@ class PHPInterpreter
                 exit;
             case Stmt\Foreach_::class:
                 $items = $this->evaluate($node->expr);
-                foreach ($node->stmts as $stmt) {
-                    $ret = $this->evaluate($stmt);
-                    $keyVar = $node->keyVar;
-                    $valueVar = $node->valueVar;
-                    if ($ret instanceof Stmt\Return_) {
-                        return $this->evaluate($ret->expr);
+                foreach ($items as $key => $item) {
+                    $this->currentEnv->set($node->valueVar, $item);
+                    if (!is_null($node->keyVar)) {
+                        $this->currentEnv->set($node->keyVar, $key);
                     }
-                    if ($ret instanceof Stmt\Break_) {
-                        break;
-                    }
-                    if ($ret instanceof Stmt\Continue_) {
-                        break;
+                    foreach ($node->stmts as $stmt) {
+                        $ret = $this->evaluate($stmt);
+                        if ($ret instanceof Stmt\Return_) {
+                            return $this->evaluate($ret->expr);
+                        }
+                        if ($ret instanceof Stmt\Break_) {
+                            break;
+                        }
+                        if ($ret instanceof Stmt\Continue_) {
+                            break;
+                        }
                     }
                 }
             case Expr\Array_::class:
@@ -270,6 +274,37 @@ class PHPInterpreter
                 $var = $this->evaluate($node->var);
                 $dim = $this->evaluate($node->dim);
                 return $var->get($dim->value);
+            case Stmt\TryCatch::class:
+                foreach ($node->stmts as $stmt) {
+                    $ret = $this->evaluate($stmt);
+                    if ($ret instanceof Stmt\Return_) {
+                        return $this->evaluate($ret->expr);
+                    }
+                    if ($ret instanceof ThrowObject) {
+                        foreach ($node->catches as $catch) {
+                            foreach ($catch->types as $type) {
+                                if ($ret->isEqual($type->toString())) {
+                                    foreach ($catch->stmts as $stmt) {
+                                        $ret = $this->evaluate($stmt);
+                                        if ($ret instanceof Stmt\Return_) {
+                                            return $this->evaluate($ret->expr);
+                                        }
+                                    }
+                                    return; // TODO: impl
+                                }
+                            }
+                        }
+                    }
+                    if (!is_null($node->finally)) {
+                        foreach ($node->finally->stmts as $stmt) {
+                            $ret = $this->evaluate($stmt);
+                            if ($ret instanceof Stmt\Return_) {
+                                return $this->evaluate($ret->expr);
+                            }
+                        }
+                    }
+                }
+                return;
         }
     }
 
