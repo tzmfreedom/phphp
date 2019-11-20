@@ -52,8 +52,8 @@ class PHPInterpreter
     {
         $this->constMap = [
             'PHP_EOL' => new \PhpParser\Node\Scalar\String_(PHP_EOL),
-            'true' => new BoolObject(true),
-            'false' => new BoolObject(false),
+            'true' => new BoolValue(true),
+            'false' => new BoolValue(false),
         ];
         $this->currentEnv = new VariableEnvironment(null);
         $this->parser = $parser;
@@ -91,7 +91,7 @@ class PHPInterpreter
 
     /**
      * @param $node
-     * @return mixed|Instance|NullValue|\PhpParser\Node\Scalar\LNumber|String_|void
+     * @return mixed|InstanceValue|NullValue|\PhpParser\Node\Scalar\LNumber|String_|void
      * @throws \Exception
      */
     public function evaluate($node)
@@ -100,16 +100,16 @@ class PHPInterpreter
             case Stmt\Expression::class:
                 return $this->evaluate($node->expr);
             case Echo_::class:
-                $returnNode = $this->evaluate($node->exprs[0]);
-                echo $returnNode->value;
+                $ret = $this->evaluate($node->exprs[0]);
+                echo $ret->toString();
                 break;
             case Expr\FuncCall::class:
                 $name = $node->name->toString();
                 switch ($name) {
                     case "var_dump":
                         $returnNode = $this->evaluate($node->args[0]);
-                        var_dump($returnNode->value);
-                        break;
+                        var_dump($returnNode->getValue());
+                        return;
                 }
                 if ($this->isFunctionExists($node->name->toString())) {
                     $function = $this->getFunction($name);
@@ -134,23 +134,23 @@ class PHPInterpreter
             case \PhpParser\Node\Expr\BinaryOp\Concat::class:
                 $left = $this->evaluate($node->left);
                 $right = $this->evaluate($node->right);
-                return new \PhpParser\Node\Scalar\String_($left->value . $right->value);
+                return new \PhpParser\Node\Scalar\String_($left->toString() . $right->toString());
             case \PhpParser\Node\Expr\BinaryOp\Plus::class:
                 $left = $this->evaluate($node->left);
                 $right = $this->evaluate($node->right);
-                return new \PhpParser\Node\Scalar\LNumber($left->value + $right->value);
+                return new \PhpParser\Node\Scalar\LNumber($left->getValue() + $right->getValue());
             case \PhpParser\Node\Expr\BinaryOp\Minus::class:
                 $left = $this->evaluate($node->left);
                 $right = $this->evaluate($node->right);
-                return new \PhpParser\Node\Scalar\LNumber($left->value - $right->value);
+                return new \PhpParser\Node\Scalar\LNumber($left->getValue() - $right->getValue());
             case \PhpParser\Node\Expr\BinaryOp\Mul::class:
                 $left = $this->evaluate($node->left);
                 $right = $this->evaluate($node->right);
-                return new \PhpParser\Node\Scalar\LNumber($left->value * $right->value);
+                return new \PhpParser\Node\Scalar\LNumber($left->getValue() * $right->getValue());
             case \PhpParser\Node\Expr\BinaryOp\Div::class:
                 $left = $this->evaluate($node->left);
                 $right = $this->evaluate($node->right);
-                return new \PhpParser\Node\Scalar\LNumber($left->value / $right->value);
+                return new \PhpParser\Node\Scalar\LNumber($left->getValue() / $right->getValue());
             case \PhpParser\Node\Arg::class:
                 return $this->evaluate($node->value);
             case \PhpParser\Node\Expr\ConstFetch::class:
@@ -161,8 +161,11 @@ class PHPInterpreter
                 }
                 return new NullValue();
             case \PhpParser\Node\Scalar\String_::class:
+                return new StringValue($node->value);
             case \PhpParser\Node\Scalar\DNumber::class:
+                return new DoubleValue($node->value);
             case \PhpParser\Node\Scalar\LNumber::class:
+                return new LongValue($node->value);
             case Stmt\Return_::class:
                 return $node;
             case Stmt\Function_::class:
@@ -172,7 +175,7 @@ class PHPInterpreter
             case Expr\New_::class:
                 $name = $node->class->toString();
                 if (array_key_exists($name, $this->classMap)) {
-                    $obj = new Instance($this->classMap[$name]);
+                    $obj = new InstanceValue($this->classMap[$name]);
                     return $obj;
                 }
                 throw new \Exception("no class exists");
@@ -249,11 +252,11 @@ class PHPInterpreter
             case Expr\Exit_::class:
                 exit;
             case Stmt\Foreach_::class:
-                $items = $this->evaluate($node->expr);
-                foreach ($items as $key => $item) {
-                    $this->currentEnv->set($node->valueVar, $item);
+                $arrayValue = $this->evaluate($node->expr);
+                foreach ($arrayValue->getValue() as $key => $item) {
+                    $this->currentEnv->set($node->valueVar->name, $item);
                     if (!is_null($node->keyVar)) {
-                        $this->currentEnv->set($node->keyVar, $key);
+                        $this->currentEnv->set($node->keyVar->name, $key);
                     }
                     foreach ($node->stmts as $stmt) {
                         $ret = $this->evaluate($stmt);
@@ -268,8 +271,18 @@ class PHPInterpreter
                         }
                     }
                 }
+                return;
             case Expr\Array_::class:
-                return new ArrayObject($node);
+                $items = [];
+                foreach ($node->items as $i => $item) {
+                    $value = $this->evaluate($item->value);
+                    if (is_null($item->key)) {
+                        $items[$i] = $value;
+                    } else {
+                        $items[$item->key->value] = $value;
+                    }
+                }
+                return new ArrayValue($items);
             case Expr\ArrayDimFetch::class:
                 $var = $this->evaluate($node->var);
                 $dim = $this->evaluate($node->dim);

@@ -2,12 +2,10 @@
 
 namespace PHPHP;
 
-class NullValue
+class NullValue extends Value
 {
-    public $value;
-
-    public function __construct()
+    public function getValue()
     {
-        $this->value = null;
+        return null;
     }
 }

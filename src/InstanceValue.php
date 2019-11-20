@@ -2,7 +2,7 @@
 
 namespace PHPHP;
 
-class Instance
+class InstanceValue
 {
     public $class;
     public $properties;
