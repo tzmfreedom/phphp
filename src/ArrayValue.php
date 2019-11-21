@@ -14,7 +14,7 @@ class ArrayValue extends Value
     public function get($key)
     {
         if (array_key_exists($key, $this->items)) {
-            return $this->items[$key]->value;
+            return $this->items[$key];
         }
         throw new \Exception("no index item");
     }

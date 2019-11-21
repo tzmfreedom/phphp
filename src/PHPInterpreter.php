@@ -134,23 +134,55 @@ class PHPInterpreter
             case \PhpParser\Node\Expr\BinaryOp\Concat::class:
                 $left = $this->evaluate($node->left);
                 $right = $this->evaluate($node->right);
-                return new \PhpParser\Node\Scalar\String_($left->toString() . $right->toString());
+                return new StringValue($left->toString() . $right->toString());
             case \PhpParser\Node\Expr\BinaryOp\Plus::class:
                 $left = $this->evaluate($node->left);
                 $right = $this->evaluate($node->right);
-                return new \PhpParser\Node\Scalar\LNumber($left->getValue() + $right->getValue());
+                return new LongValue($left->getValue() + $right->getValue());
             case \PhpParser\Node\Expr\BinaryOp\Minus::class:
                 $left = $this->evaluate($node->left);
                 $right = $this->evaluate($node->right);
-                return new \PhpParser\Node\Scalar\LNumber($left->getValue() - $right->getValue());
+                return new LongValue($left->getValue() - $right->getValue());
             case \PhpParser\Node\Expr\BinaryOp\Mul::class:
                 $left = $this->evaluate($node->left);
                 $right = $this->evaluate($node->right);
-                return new \PhpParser\Node\Scalar\LNumber($left->getValue() * $right->getValue());
+                return new LongValue($left->getValue() * $right->getValue());
             case \PhpParser\Node\Expr\BinaryOp\Div::class:
                 $left = $this->evaluate($node->left);
                 $right = $this->evaluate($node->right);
-                return new \PhpParser\Node\Scalar\LNumber($left->getValue() / $right->getValue());
+                return new LongValue($left->getValue() / $right->getValue());
+            case Expr\BinaryOp\Smaller::class:
+                $left = $this->evaluate($node->left);
+                $right = $this->evaluate($node->right);
+                return new BoolValue($left->getValue() < $right->getValue());
+            case Expr\BinaryOp\SmallerOrEqual::class:
+                $left = $this->evaluate($node->left);
+                $right = $this->evaluate($node->right);
+                return new BoolValue($left->getValue() <= $right->getValue());
+            case Expr\BinaryOp\Greater::class:
+                $left = $this->evaluate($node->left);
+                $right = $this->evaluate($node->right);
+                return new BoolValue($left->getValue() > $right->getValue());
+            case Expr\BinaryOp\GreaterOrEqual::class:
+                $left = $this->evaluate($node->left);
+                $right = $this->evaluate($node->right);
+                return new BoolValue($left->getValue() >= $right->getValue());
+            case Expr\BinaryOp\Equal::class:
+                $left = $this->evaluate($node->left);
+                $right = $this->evaluate($node->right);
+                return new BoolValue($left->getValue() == $right->getValue());
+            case Expr\BinaryOp\NotEqual::class:
+                $left = $this->evaluate($node->left);
+                $right = $this->evaluate($node->right);
+                return new BoolValue($left->getValue() != $right->getValue());
+            case Expr\BinaryOp\Identical::class:
+                $left = $this->evaluate($node->left);
+                $right = $this->evaluate($node->right);
+                return new BoolValue($left->getValue() === $right->getValue());
+            case Expr\BinaryOp\NotIdentical::class:
+                $left = $this->evaluate($node->left);
+                $right = $this->evaluate($node->right);
+                return new BoolValue($left->getValue() !== $right->getValue());
             case \PhpParser\Node\Arg::class:
                 return $this->evaluate($node->value);
             case \PhpParser\Node\Expr\ConstFetch::class:
@@ -251,6 +283,23 @@ class PHPInterpreter
                 return;
             case Expr\Exit_::class:
                 exit;
+            case Stmt\For_::class:
+                foreach ($node->init as $init) {
+                    $this->evaluate($init);
+                }
+                while (true) {
+                    $cond = $this->evaluate($node->cond[0]);
+                    if (!$cond->getValue()) {
+                        break;
+                    }
+                    foreach ($node->stmts as $stmt) {
+                        $this->evaluate($stmt);
+                    }
+                    foreach ($node->loop as $loop) {
+                        $this->evaluate($loop);
+                    }
+                }
+                return;
             case Stmt\Foreach_::class:
                 $arrayValue = $this->evaluate($node->expr);
                 foreach ($arrayValue->getValue() as $key => $item) {
@@ -286,7 +335,7 @@ class PHPInterpreter
             case Expr\ArrayDimFetch::class:
                 $var = $this->evaluate($node->var);
                 $dim = $this->evaluate($node->dim);
-                return $var->get($dim->value);
+                return $var->get($dim->getValue());
             case Stmt\TryCatch::class:
                 foreach ($node->stmts as $stmt) {
                     $ret = $this->evaluate($stmt);
@@ -318,6 +367,22 @@ class PHPInterpreter
                     }
                 }
                 return;
+            case Expr\PreInc::class:
+                $ret = new LongValue($this->evaluate($node->var)->getValue() + 1);
+                $this->currentEnv->set($node->var->name, $ret);
+                return $ret;
+            case Expr\PostInc::class:
+                $ret = $this->evaluate($node->var);
+                $this->currentEnv->set($node->var->name, new LongValue($ret->getValue() + 1));
+                return $ret;
+            case Expr\PreDec::class:
+                $ret = new Longvalue($this->evaluate($node->var)->getValue() - 1);
+                $this->currentEnv->set($node->var->name, $ret);
+                return $ret;
+            case Expr\PostDec::class:
+                $ret = $this->evaluate($node->var);
+                $this->currentEnv->set($node->var->name, new LongValue($ret->getValue() - 1));
+                return $ret;
         }
     }
 
