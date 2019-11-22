@@ -27,4 +27,9 @@ class InstanceValue
     {
         return $this->properties[$name];
     }
+
+    public function setProperty(string $name, $value)
+    {
+        $this->properties[$name] = $value;
+    }
 }

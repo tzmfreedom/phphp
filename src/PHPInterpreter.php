@@ -132,7 +132,13 @@ class PHPInterpreter
                 throw new \Exception("no function exists");
             case \PhpParser\Node\Expr\Assign::class:
                 $expr = $this->evaluate($node->expr);
-                $this->currentEnv->set($node->var->name, $expr);
+                $var = $node->var;
+                if ($var instanceof Expr\Variable) {
+                    $this->currentEnv->set($var->name, $expr);
+                } elseif ($var instanceof Expr\PropertyFetch) {
+                    $receiver = $this->evaluate($var->var);
+                    $receiver->setProperty($var->name->toString(), $expr);
+                }
                 return $expr;
             case \PhpParser\Node\Expr\BinaryOp\Concat::class:
                 $left = $this->evaluate($node->left);
@@ -405,13 +411,10 @@ class PHPInterpreter
             case Stmt\Continue_::class:
                 return new ContinueObject();
             case Expr\PropertyFetch::class:
-                $receiver = $this->evaluate($node->var->name);
-                $isReceiverThis= $node->var instanceof \PhpParser\Node\Expr\Variable && $node->var->name === 'this';
-                $prop = $receiver->getClass()->getProperty($this->name->toString(), $isReceiverThis, $isReceiverThis);
-                if ($prop) {
-//                    $receiver->set()
-                }
-                return;
+                $receiver = $this->evaluate($node->var);
+//                $isReceiverThis= $node->var instanceof \PhpParser\Node\Expr\Variable && $node->var->name === 'this';
+//                $prop = $receiver->getClass()->getProperty($this->name->toString(), $isReceiverThis, $isReceiverThis);
+                return $receiver->getProperty($node->name->toString());
         }
     }
 
