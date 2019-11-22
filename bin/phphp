@@ -10,17 +10,28 @@ use PHPHP\PHPInterpreter;
 use PhpParser\Error;
 use PhpParser\ParserFactory;
 
-$file = $argv[1];
+$optind = null;
+$options = getopt('', ['cgi'], $optind);
+$args = array_slice($argv, $optind);
+$file = $args[0];
 $lines = file($file);
 if (preg_match('/\A#!.*/', $lines[0])) {
     array_shift($lines);
 }
+$cgi = array_key_exists('cgi', $options);
 $parser = (new ParserFactory)->create(ParserFactory::PREFER_PHP7);
 try {
     $interpreter = new PHPInterpreter($parser);
     $interpreter->setDebug(false);
     $code = implode(PHP_EOL, $lines);
-    $interpreter->run($code, $file);
+    if ($cgi) {
+        ob_start();
+        $interpreter->run($code, $file);
+        $res = ob_get_clean();
+        echo 'Content-Type: text/html' . PHP_EOL . PHP_EOL . $res;
+    } else {
+        $interpreter->run($code, $file);
+    }
 } catch (Error $error) {
     echo "Parse error: {$error->getMessage()}\n";
     return;

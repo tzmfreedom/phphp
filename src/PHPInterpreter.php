@@ -67,12 +67,19 @@ class PHPInterpreter
         $this->debug = $debug;
     }
 
+    public function run(string $code, string $filePath)
+    {
+        try {
+            $this->runCode($code, $filePath);
+        } catch (ExitException $e) {}
+    }
+
     /**
      * @param string $code
      * @param string $filePath
      * @throws \Exception
      */
-    public function run(string $code, string $filePath)
+    private function runCode(string $code, string $filePath)
     {
         $prevPath = $this->currentFilePath;
         $this->currentFilePath = realpath($filePath);
@@ -253,7 +260,7 @@ class PHPInterpreter
             case Expr\Include_::class:
                 $file = $this->evaluate($node->expr);
                 $code = file_get_contents($file->value);
-                $this->run($code, $file->value);
+                $this->runCode($code, $file->value);
                 return;
             // TODO: impl __DIR__ and __FILE__
             case Dir::class:
@@ -294,7 +301,7 @@ class PHPInterpreter
                 }
                 return;
             case Expr\Exit_::class:
-                exit;
+                throw new ExitException();
             case Stmt\For_::class:
                 foreach ($node->init as $init) {
                     $this->evaluate($init);
