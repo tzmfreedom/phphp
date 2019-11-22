@@ -51,7 +51,7 @@ class PHPInterpreter
     public function __construct(Parser $parser)
     {
         $this->constMap = [
-            'PHP_EOL' => new \PhpParser\Node\Scalar\String_(PHP_EOL),
+            'PHP_EOL' => new StringValue(PHP_EOL),
             'true' => new BoolValue(true),
             'false' => new BoolValue(false),
         ];
@@ -124,7 +124,10 @@ class PHPInterpreter
                     };
                     $ret = $function->call($this);
                     $this->currentEnv = $prevEnv;
-                    return $ret;
+                    if ($ret instanceof ReturnObject) {
+                        return $ret->getValue();
+                    }
+                    return new NullValue();
                 }
                 throw new \Exception("no function exists");
             case \PhpParser\Node\Expr\Assign::class:
@@ -198,8 +201,8 @@ class PHPInterpreter
                 return new DoubleValue($node->value);
             case \PhpParser\Node\Scalar\LNumber::class:
                 return new LongValue($node->value);
-            case Stmt\Return_::class:
-                return $node;
+            case ReturnObject::class:
+                return new ReturnObject($node);
             case Stmt\Function_::class:
                 $name = $node->name->toString();
                 $this->addFunction($name, $node->params, $node->stmts);
@@ -215,7 +218,7 @@ class PHPInterpreter
                 $receiver = $this->evaluate($node->var);
                 $isReceiverThis= $node->var instanceof \PhpParser\Node\Expr\Variable && $node->var->name === 'this';
                 /** @var $method MethodObject */
-                $method = $receiver->class->getMethod($node->name->toString(), $isReceiverThis, $isReceiverThis);
+                $method = $receiver->getClass()->getMethod($node->name->toString(), $isReceiverThis, $isReceiverThis);
                 $args = [];
                 foreach ($node->args as $i => $arg) {
                     $args[$i] = $this->evaluate($arg);
@@ -231,7 +234,10 @@ class PHPInterpreter
                 }
                 $ret = $method->call($this);
                 $this->currentEnv = $prevEnv;
-                return $ret;
+                if ($ret instanceof ReturnObject) {
+                    return $ret->getValue();
+                }
+                return new NullValue();
             case Stmt\Class_::class:
                 $this->addClass($node);
                 return;
@@ -245,15 +251,15 @@ class PHPInterpreter
                 return;
             // TODO: impl __DIR__ and __FILE__
             case Dir::class:
-                return new String_(dirname($this->currentFilePath));
+                return new StringValue(dirname($this->currentFilePath));
             case File::class:
-                return new String_($this->currentFilePath);
+                return new StringValue($this->currentFilePath);
             case Stmt\If_::class:
                 $cond = $this->evaluate($node->cond);
                 if ($cond->value) {
                     foreach ($node->stmts as $stmt) {
                         $ret = $this->evaluate($stmt);
-                        if ($ret instanceof Stmt\Return_) {
+                        if ($ret instanceof ReturnObject) {
                             return $this->evaluate($ret->expr);
                         }
                     }
@@ -264,7 +270,7 @@ class PHPInterpreter
                         if ($cond->value) {
                             foreach ($elseif->stmts as $stmt) {
                                 $ret = $this->evaluate($stmt);
-                                if ($ret instanceof Stmt\Return_) {
+                                if ($ret instanceof ReturnObject) {
                                     return $this->evaluate($ret->expr);
                                 }
                             }
@@ -275,7 +281,7 @@ class PHPInterpreter
                 if (!is_null($node->else)) {
                     foreach ($node->else->stmts as $stmt) {
                         $ret = $this->evaluate($stmt);
-                        if ($ret instanceof Stmt\Return_) {
+                        if ($ret instanceof ReturnObject) {
                             return $this->evaluate($ret->expr);
                         }
                     }
@@ -293,7 +299,16 @@ class PHPInterpreter
                         break;
                     }
                     foreach ($node->stmts as $stmt) {
-                        $this->evaluate($stmt);
+                        $ret = $this->evaluate($stmt);
+                        if ($ret instanceof ReturnObject) {
+                            return $this->evaluate($ret->expr);
+                        }
+                        if ($ret instanceof BreakObject) {
+                            break 2;
+                        }
+                        if ($ret instanceof ContinueObject) {
+                            break;
+                        }
                     }
                     foreach ($node->loop as $loop) {
                         $this->evaluate($loop);
@@ -309,13 +324,13 @@ class PHPInterpreter
                     }
                     foreach ($node->stmts as $stmt) {
                         $ret = $this->evaluate($stmt);
-                        if ($ret instanceof Stmt\Return_) {
+                        if ($ret instanceof ReturnObject) {
                             return $this->evaluate($ret->expr);
                         }
-                        if ($ret instanceof Stmt\Break_) {
-                            break;
+                        if ($ret instanceof BreakObject) {
+                            break 2;
                         }
-                        if ($ret instanceof Stmt\Continue_) {
+                        if ($ret instanceof ContinueObject) {
                             break;
                         }
                     }
@@ -323,10 +338,12 @@ class PHPInterpreter
                 return;
             case Expr\Array_::class:
                 $items = [];
-                foreach ($node->items as $i => $item) {
+                $i = 0;
+                foreach ($node->items as $item) {
                     $value = $this->evaluate($item->value);
                     if (is_null($item->key)) {
                         $items[$i] = $value;
+                        $i++;
                     } else {
                         $items[$item->key->value] = $value;
                     }
@@ -339,7 +356,7 @@ class PHPInterpreter
             case Stmt\TryCatch::class:
                 foreach ($node->stmts as $stmt) {
                     $ret = $this->evaluate($stmt);
-                    if ($ret instanceof Stmt\Return_) {
+                    if ($ret instanceof ReturnObject) {
                         return $this->evaluate($ret->expr);
                     }
                     if ($ret instanceof ThrowObject) {
@@ -348,7 +365,7 @@ class PHPInterpreter
                                 if ($ret->isEqual($type->toString())) {
                                     foreach ($catch->stmts as $stmt) {
                                         $ret = $this->evaluate($stmt);
-                                        if ($ret instanceof Stmt\Return_) {
+                                        if ($ret instanceof ReturnObject) {
                                             return $this->evaluate($ret->expr);
                                         }
                                     }
@@ -360,7 +377,7 @@ class PHPInterpreter
                     if (!is_null($node->finally)) {
                         foreach ($node->finally->stmts as $stmt) {
                             $ret = $this->evaluate($stmt);
-                            if ($ret instanceof Stmt\Return_) {
+                            if ($ret instanceof ReturnObject) {
                                 return $this->evaluate($ret->expr);
                             }
                         }
@@ -383,6 +400,18 @@ class PHPInterpreter
                 $ret = $this->evaluate($node->var);
                 $this->currentEnv->set($node->var->name, new LongValue($ret->getValue() - 1));
                 return $ret;
+            case Stmt\Break_::class:
+                return new BreakObject();
+            case Stmt\Continue_::class:
+                return new ContinueObject();
+            case Expr\PropertyFetch::class:
+                $receiver = $this->evaluate($node->var->name);
+                $isReceiverThis= $node->var instanceof \PhpParser\Node\Expr\Variable && $node->var->name === 'this';
+                $prop = $receiver->getClass()->getProperty($this->name->toString(), $isReceiverThis, $isReceiverThis);
+                if ($prop) {
+//                    $receiver->set()
+                }
+                return;
         }
     }
 
