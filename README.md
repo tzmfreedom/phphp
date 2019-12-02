@@ -1,6 +1,6 @@
 # PHPHP
 
-[WIP] PHP written by PHP
+PHP written by PHP
 
 ## Install
 
